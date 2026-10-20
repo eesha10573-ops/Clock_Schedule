@@ -1,0 +1,419 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bae Seok-Ryu’s Unemployed Schedule</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #eeece5;
+  color: #292929;
+  font-family: Arial, sans-serif;
+  padding: 20px;
+}
+
+main {
+  width: min(100%, 560px);
+  text-align: center;
+}
+
+h1 {
+  font-size: clamp(18px, 4vw, 25px);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  color: #777;
+  font-size: 11px;
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+}
+
+.clock {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.ring {
+  fill: none;
+  stroke: #333;
+  stroke-width: 1.2;
+}
+
+.division {
+  stroke: #777;
+  stroke-width: 0.8;
+}
+
+.hour {
+  font-size: 10px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  fill: #333;
+}
+
+.block {
+  stroke: #fff;
+  stroke-width: 1.5;
+  cursor: pointer;
+  transition: fill 0.2s;
+}
+
+.block:hover { stroke: #333; }
+
+.block.active {
+  stroke: #242424;
+  stroke-width: 2.5;
+}
+
+.activity {
+  font-size: 10px;
+  fill: #292929;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+#hand {
+  stroke: #d94d45;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+#center {
+  fill: #e4cc35;
+  stroke: #333;
+  stroke-width: 1;
+}
+
+.reset {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid #8f7b20;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  background: #e4cc35;
+  font-weight: bold;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.reset:active {
+  transform: translate(-50%, -50%) scale(.95);
+}
+
+.time {
+  margin-top: 12px;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.date {
+  margin-top: 4px;
+  color: #777;
+  font-size: 12px;
+}
+
+.current {
+  margin: 16px 0;
+  min-height: 24px;
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.legend {
+  text-align: left;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.item {
+  border: 1px solid #d4d0c7;
+  background: #f7f5ef;
+  padding: 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.item.active {
+  border: 2px solid #d1b72c;
+  background: #fff8cb;
+}
+
+.item small {
+  display: block;
+  color: #777;
+  margin-top: 4px;
+}
+
+footer {
+  margin-top: 24px;
+  font-size: 10px;
+  color: #777;
+  line-height: 1.7;
+}
+
+@media (max-width: 380px) {
+  .activity { font-size: 8px; }
+  .hour { font-size: 9px; }
+}
+</style>
+</head>
+
+<body>
+<main>
+  <h1>DAILY SCHEDULE</h1>
+  <div class="subtitle">24-HOUR DAILY CLOCK</div>
+
+  <div class="clock">
+    <svg id="dial" viewBox="0 0 400 400"
+         aria-label="Interactive 24-hour activity clock">
+      <circle class="ring" cx="200" cy="200" r="170"/>
+      <g id="blocks"></g>
+      <circle class="ring" cx="200" cy="200" r="125"/>
+      <g id="divisions"></g>
+      <g id="numbers"></g>
+      <g id="labels"></g>
+      <line id="hand" x1="200" y1="200" x2="200" y2="45"/>
+      <circle id="center" cx="200" cy="200" r="5"/>
+    </svg>
+    <button class="reset" id="reset">PLAY<br> / RESET</button>
+  </div>
+
+  <div class="time" id="time">00:00:00</div>
+  <div class="date" id="date"></div>
+  <div class="current" id="current">Loading schedule...</div>
+
+  <div class="legend" id="legend"></div>
+
+  <footer>
+    Inspired by <i>LND</i> (2024).<br>
+    Unofficial fan-made project; not affiliated with the show's creators.
+  </footer>
+</main>
+
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const cx = 200, cy = 200;
+const outer = 170, inner = 65, labelRadius = 100;
+
+// Activity times are editable. Hours use your device's local time.
+const activities = [
+  { name: "Dreamland", start: 0, end: 6, color: "#dce3ee" },
+  { name: "Morning", start: 6, end: 7, color: "#f1dfba" },
+  { name: "Study Math/Science", start: 7, end: 9, color: "#e8d4e5" },
+  { name: "Play Out", start: 9, end: 10, color: "#d7e4ed" },
+  { name: "Study Social", start: 10, end: 12, color: "#eadfb8" },
+  { name: "Lunch / Free Time", start: 12, end: 13, color: "#d9e4cf" },
+  { name: "Break", start: 13, end: 14.5, color: "#e8d2cc" },
+  { name: "Do Homework", start: 14.5, end: 15, color: "#e8d2cc" },
+  { name: "Break", start: 15, end: 16, color: "#d9e4cf" },
+  { name: "Go To Temple", start: 16, end: 17, color: "#e8d4e5" },
+  { name: "Play and Guitar", start: 17, end: 19, color: "#eadfb8" },
+  { name: "Do Homework", start: 19, end: 19.5, color: "#dce3ee" },
+  { name: "Free Time", start: 19.5, end: 21.5, color: "#d9e4cf" },
+  { name: "Sleep", start: 21.5, end: 24, color: "#dce3ee" }
+];
+
+const $ = id => document.getElementById(id);
+
+function svgEl(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  Object.entries(attrs).forEach(([k, v]) =>
+    e.setAttribute(k, v)
+  );
+  parent.appendChild(e);
+  return e;
+}
+
+function point(hour, r) {
+  const a = hour * Math.PI / 12 - Math.PI / 2;
+  return {
+    x: cx + r * Math.cos(a),
+    y: cy + r * Math.sin(a)
+  };
+}
+
+function sectorPath(start, end, r1, r2) {
+  const a = point(start, r2);
+  const b = point(end, r2);
+  const c = point(end, r1);
+  const d = point(start, r1);
+  const large = end - start > 12 ? 1 : 0;
+
+  return [
+    `M ${a.x} ${a.y}`,
+    `A ${r2} ${r2} 0 ${large} 1 ${b.x} ${b.y}`,
+    `L ${c.x} ${c.y}`,
+    `A ${r1} ${r1} 0 ${large} 0 ${d.x} ${d.y}`,
+    "Z"
+  ].join(" ");
+}
+
+function drawClock() {
+  const blocks = $("blocks");
+  const divisions = $("divisions");
+  const numbers = $("numbers");
+  const labels = $("labels");
+  const legend = $("legend");
+
+  activities.forEach((a, i) => {
+    const path = svgEl("path", {
+      d: sectorPath(a.start, a.end, inner, outer),
+      fill: a.color,
+      class: "block",
+      "data-index": i,
+      tabindex: "0",
+      role: "button",
+      "aria-label": `${a.name}, ${a.start}:00 to ${a.end}:00`
+    }, blocks);
+
+    path.addEventListener("click", () => showActivity(i));
+    path.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        showActivity(i);
+      }
+    });
+
+    const p = point((a.start + a.end) / 2, labelRadius);
+    const text = svgEl("text", {
+      x: p.x, y: p.y, class: "activity"
+    }, labels);
+
+    // Split longer names into two lines.
+    const words = a.name.split(" ");
+    if (a.name.length > 13 && words.length > 1) {
+      const half = Math.ceil(words.length / 2);
+      const t1 = svgEl("tspan", {
+        x: p.x, dy: "-5"
+      }, text);
+      t1.textContent = words.slice(0, half).join(" ");
+      const t2 = svgEl("tspan", {
+        x: p.x, dy: "12"
+      }, text);
+      t2.textContent = words.slice(half).join(" ");
+    } else {
+      text.textContent = a.name;
+    }
+
+    const row = document.createElement("button");
+    row.className = "item";
+    row.dataset.index = i;
+    row.innerHTML =
+      `${a.name}<small>${formatHour(a.start)} – ${formatHour(a.end)}</small>`;
+    row.addEventListener("click", () => showActivity(i));
+    legend.appendChild(row);
+  });
+
+  for (let h = 0; h < 24; h++) {
+    const p1 = point(h, inner);
+    const p2 = point(h, outer);
+    svgEl("line", {
+      x1: p1.x, y1: p1.y,
+      x2: p2.x, y2: p2.y,
+      class: "division"
+    }, divisions);
+
+    const n = point(h === 0 ? 24 : h, 184);
+    const t = svgEl("text", {
+      x: n.x, y: n.y, class: "hour"
+    }, numbers);
+    t.textContent = h === 0 ? "24" : h;
+  }
+}
+
+function formatHour(h) {
+  const whole = Math.floor(h);
+  const minutes = Math.round((h - whole) * 60);
+  return String(whole).padStart(2, "0") + ":" + String(minutes).padStart(2, "0");
+}
+
+let manualSelection = null;
+
+function showActivity(i) {
+  manualSelection = i;
+  $("current").textContent =
+    "Selected: " + activities[i].name;
+  updateHighlights(i);
+}
+
+function updateHighlights(active) {
+  document.querySelectorAll(".block").forEach((el, i) => {
+    el.classList.toggle("active", i === active);
+  });
+  document.querySelectorAll(".item").forEach((el, i) => {
+    el.classList.toggle("active", i === active);
+  });
+}
+
+function updateClock() {
+  const now = new Date();
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  const second = now.getSeconds();
+  const exactHour = hour + minute / 60 + second / 3600;
+
+  const p = point(exactHour, 150);
+  $("hand").setAttribute("x2", p.x);
+  $("hand").setAttribute("y2", p.y);
+
+  $("time").textContent = now.toLocaleTimeString([], {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+
+  $("date").textContent = now.toLocaleDateString([], {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
+
+  const active = activities.findIndex(a =>
+    exactHour >= a.start && exactHour < a.end
+  );
+
+  updateHighlights(manualSelection === null ? active : manualSelection);
+
+  if (manualSelection === null) {
+    $("current").textContent =
+      active >= 0 ? "Now: " + activities[active].name : "Now: Free time";
+  }
+}
+
+$("reset").addEventListener("click", () => {
+  manualSelection = null;
+  updateClock();
+});
+
+drawClock();
+updateClock();
+setInterval(updateClock, 250);
+</script>
+</body>
+</html>
